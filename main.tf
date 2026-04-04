@@ -268,7 +268,7 @@
      yum install -y python3-pip unzip
      pip3 install flask requests boto3 pytz prometheus-flask-exporter
 
-      mkdir -p /home/ec2-user/app
+    mkdir -p /home/ec2-user/app
 
       2. Inject the Flask app
      cat << 'PY_EOF' > /home/ec2-user/app/app.py
