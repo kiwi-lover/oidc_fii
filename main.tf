@@ -1,261 +1,261 @@
-   # CloudPulse Infrastructure — Observability
+# CloudPulse Infrastructure — Observability
 
 
- data "aws_caller_identity" "current" {}
+data "aws_caller_identity" "current" {}
 
- data "aws_region" "main" {
-   provider = aws.main
- }
+data "aws_region" "main" {
+  provider = aws.main
+}
 
- data "aws_availability_zones" "main" {
-   provider = aws.main
-   state    = "available"
- }
+data "aws_availability_zones" "main" {
+  provider = aws.main
+  state    = "available"
+}
 
- data "aws_ami" "amazon_linux" {
-   provider    = aws.main
-   most_recent = true
-   owners      = ["amazon"]
+data "aws_ami" "amazon_linux" {
+  provider    = aws.main
+  most_recent = true
+  owners      = ["amazon"]
 
-   filter {
-     name   = "name"
-     values = ["al2023-ami-20*-kernel-*-x86_64"]
-   }
+  filter {
+    name   = "name"
+    values = ["al2023-ami-20*-kernel-*-x86_64"]
+  }
 
-   filter {
-     name   = "virtualization-type"
-     values = ["hvm"]
-   }
- }
-
-
-  
-  #PHASE 1: Network — VPC + Subnet + Route table
-  #============================================================
-
-
- resource "aws_vpc" "cloudpulse" {
-   provider             = aws.main
-   cidr_block           = var.vpc_cidr
-   enable_dns_support   = true
-   enable_dns_hostnames = true
-   tags                 = { Name = "${var.main_stack_name}-vpc" }
- }
-
- resource "aws_internet_gateway" "cloudpulse" {
-   provider = aws.main
-   vpc_id   = aws_vpc.cloudpulse.id
-   tags     = { Name = "${var.main_stack_name}-igw" }
- }
-
- resource "aws_subnet" "public" {
-   provider                = aws.main
-   vpc_id                  = aws_vpc.cloudpulse.id
-   cidr_block              = var.public_subnet_cidr
-   availability_zone       = data.aws_availability_zones.main.names[0]
-   map_public_ip_on_launch = true
-   tags                    = { Name = "${var.main_stack_name}-public-subnet" }
- }
-
- resource "aws_route_table" "public" {
-   provider = aws.main
-   vpc_id   = aws_vpc.cloudpulse.id
-   route {
-     cidr_block = "0.0.0.0/0"
-     gateway_id = aws_internet_gateway.cloudpulse.id
-   }
-   tags = { Name = "${var.main_stack_name}-public-rt" }
- }
-
- resource "aws_route_table_association" "public" {
-   provider       = aws.main
-   subnet_id      = aws_subnet.public.id
-   route_table_id = aws_route_table.public.id
- }
-
-
-  # ============================================================
-  # PHASE 2: Security Group (module) + S3
-  # ============================================================
-
- resource "aws_security_group" "cloudpulse_sg" {
-   provider    = aws.main
-   name        = "${var.main_stack_name}-sg"
-   description = "Allow SSH, HTTP, and App ports"
-   vpc_id      = aws_vpc.cloudpulse.id
-    Standard SSH & HTTP
-   ingress {
-     description = "SSH"
-     from_port   = 22
-     to_port     = 22
-     protocol    = "tcp"
-     cidr_blocks = var.allowed_ssh_cidrs
-   }
-
-   ingress {
-     description = "HTTP"
-     from_port   = 80
-     to_port     = 80
-     protocol    = "tcp"
-     cidr_blocks = ["0.0.0.0/0"]
-   }
-
-   ingress {
-     description = "HTTP"
-     from_port   = 8089
-     to_port     = 8089
-     protocol    = "tcp"
-     cidr_blocks = ["0.0.0.0/0"]
-   }
-
-
-   ingress {
-     description = "Grafana / Apps"
-     from_port   = 3000
-     to_port     = 3000
-     protocol    = "tcp"
-     cidr_blocks = ["0.0.0.0/0"]
-   }
-
-   ingress {
-     description = "Allow all internal traffic between cluster nodes"
-     from_port   = 3000
-     to_port     = 9999
-     protocol    = "tcp"
-     self        = true
-   }
-
-   egress {
-     from_port   = 0
-     to_port     = 0
-     protocol    = "-1"
-     cidr_blocks = ["0.0.0.0/0"]
-   }
-
-   tags = { Name = "${var.main_stack_name}-sg" }
- }
-
- resource "aws_s3_bucket" "cloudpulse" {
-   provider = aws.main
-   bucket   = "${var.main_s3_bucket_prefix}-${data.aws_caller_identity.current.account_id}-${data.aws_region.main.name}"
-   tags     = { Name = "${var.main_stack_name}-assets" }
- }
-
- resource "aws_s3_object" "background" {
-   provider     = aws.main
-   bucket       = aws_s3_bucket.cloudpulse.id
-   key          = var.background_image_key
-   source       = var.background_image_path
-   content_type = "image/jpeg"
- }
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
 
 
 
-  #============================================================
- # PHASE 3: DynamoDB
-  #============================================================
+#PHASE 1: Network — VPC + Subnet + Route table
+#============================================================
 
 
- resource "aws_dynamodb_table" "cloudpulse" {
-   provider     = aws.main
-   name         = var.main_dynamodb_table_name
-   billing_mode = "PAY_PER_REQUEST"
-   hash_key     = "id"
+resource "aws_vpc" "cloudpulse" {
+  provider             = aws.main
+  cidr_block           = var.vpc_cidr
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+  tags                 = { Name = "${var.main_stack_name}-vpc" }
+}
 
-   attribute {
-     name = "id"
-     type = "S"
-   }
+resource "aws_internet_gateway" "cloudpulse" {
+  provider = aws.main
+  vpc_id   = aws_vpc.cloudpulse.id
+  tags     = { Name = "${var.main_stack_name}-igw" }
+}
 
-   tags = { Name = "${var.main_stack_name}-counter" }
- }
+resource "aws_subnet" "public" {
+  provider                = aws.main
+  vpc_id                  = aws_vpc.cloudpulse.id
+  cidr_block              = var.public_subnet_cidr
+  availability_zone       = data.aws_availability_zones.main.names[0]
+  map_public_ip_on_launch = true
+  tags                    = { Name = "${var.main_stack_name}-public-subnet" }
+}
 
- resource "aws_dynamodb_table_item" "visits" {
-   provider   = aws.main
-   table_name = aws_dynamodb_table.cloudpulse.name
-   hash_key   = aws_dynamodb_table.cloudpulse.hash_key
+resource "aws_route_table" "public" {
+  provider = aws.main
+  vpc_id   = aws_vpc.cloudpulse.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.cloudpulse.id
+  }
+  tags = { Name = "${var.main_stack_name}-public-rt" }
+}
 
-   item = <<ITEM
+resource "aws_route_table_association" "public" {
+  provider       = aws.main
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
+
+# ============================================================
+# PHASE 2: Security Group (module) + S3
+# ============================================================
+
+resource "aws_security_group" "cloudpulse_sg" {
+  provider    = aws.main
+  name        = "${var.main_stack_name}-sg"
+  description = "Allow SSH, HTTP, and App ports"
+  vpc_id      = aws_vpc.cloudpulse.id
+  #Standard SSH & HTTP
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_ssh_cidrs
+  }
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTP"
+    from_port   = 8089
+    to_port     = 8089
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+
+  ingress {
+    description = "Grafana / Apps"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Allow all internal traffic between cluster nodes"
+    from_port   = 3000
+    to_port     = 9999
+    protocol    = "tcp"
+    self        = true
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "${var.main_stack_name}-sg" }
+}
+
+resource "aws_s3_bucket" "cloudpulse" {
+  provider = aws.main
+  bucket   = "${var.main_s3_bucket_prefix}-${data.aws_caller_identity.current.account_id}-${data.aws_region.main.name}"
+  tags     = { Name = "${var.main_stack_name}-assets" }
+}
+
+resource "aws_s3_object" "background" {
+  provider     = aws.main
+  bucket       = aws_s3_bucket.cloudpulse.id
+  key          = var.background_image_key
+  source       = var.background_image_path
+  content_type = "image/jpeg"
+}
+
+
+
+#============================================================
+# PHASE 3: DynamoDB
+#============================================================
+
+
+resource "aws_dynamodb_table" "cloudpulse" {
+  provider     = aws.main
+  name         = var.main_dynamodb_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = { Name = "${var.main_stack_name}-counter" }
+}
+
+resource "aws_dynamodb_table_item" "visits" {
+  provider   = aws.main
+  table_name = aws_dynamodb_table.cloudpulse.name
+  hash_key   = aws_dynamodb_table.cloudpulse.hash_key
+
+  item = <<ITEM
  {
    "id": {"S": "visits"},
    "count": {"N": "0"}
  }
  ITEM
 
-   lifecycle {
-     ignore_changes = [item]
-   }
- }
+  lifecycle {
+    ignore_changes = [item]
+  }
+}
 
 
 
-  #============================================================
-  #PHASE 4: IAM + EC2
-  #============================================================
+#============================================================
+#PHASE 4: IAM + EC2
+#============================================================
 
 
- resource "aws_iam_role" "cloudpulse_ec2" {
-   provider = aws.main
-   name     = "${var.main_stack_name}-instance-role"
-   assume_role_policy = jsonencode({
-     Version = "2012-10-17"
-     Statement = [{
-       Action    = "sts:AssumeRole", Effect = "Allow"
-       Principal = { Service = "ec2.amazonaws.com" }
-     }]
-   })
- }
+resource "aws_iam_role" "cloudpulse_ec2" {
+  provider = aws.main
+  name     = "${var.main_stack_name}-instance-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole", Effect = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
+}
 
- resource "aws_iam_role_policy" "cloudpulse_access" {
-   provider = aws.main
-   name     = "${var.main_stack_name}-access-policy"
-   role     = aws_iam_role.cloudpulse_ec2.id
-   policy = jsonencode({
-     Version = "2012-10-17"
-     Statement = [
-       {
-         Effect = "Allow"
-         Action = ["s3:GetObject", "s3:ListBucket"]
-         Resource = [aws_s3_bucket.cloudpulse.arn,
-         "${aws_s3_bucket.cloudpulse.arn}/*"]
-       },
-       {
-         Effect = "Allow"
-         Action = ["dynamodb:GetItem", "dynamodb:UpdateItem",
-         "dynamodb:PutItem"]
-         Resource = aws_dynamodb_table.cloudpulse.arn
-       }
-     ]
-   })
- }
+resource "aws_iam_role_policy" "cloudpulse_access" {
+  provider = aws.main
+  name     = "${var.main_stack_name}-access-policy"
+  role     = aws_iam_role.cloudpulse_ec2.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:ListBucket"]
+        Resource = [aws_s3_bucket.cloudpulse.arn,
+        "${aws_s3_bucket.cloudpulse.arn}/*"]
+      },
+      {
+        Effect = "Allow"
+        Action = ["dynamodb:GetItem", "dynamodb:UpdateItem",
+        "dynamodb:PutItem"]
+        Resource = aws_dynamodb_table.cloudpulse.arn
+      }
+    ]
+  })
+}
 
- resource "aws_iam_role_policy_attachment" "cloudpulse_ec2_ssm_core" {
-   provider   = aws.main
-   role       = aws_iam_role.cloudpulse_ec2.name
-   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
- }
+resource "aws_iam_role_policy_attachment" "cloudpulse_ec2_ssm_core" {
+  provider   = aws.main
+  role       = aws_iam_role.cloudpulse_ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
 
- resource "aws_iam_instance_profile" "cloudpulse" {
-   provider   = aws.main
-   name       = "${var.main_stack_name}-instance-profile"
-   role       = aws_iam_role.cloudpulse_ec2.name
-   depends_on = [aws_iam_role_policy_attachment.cloudpulse_ec2_ssm_core]
- }
+resource "aws_iam_instance_profile" "cloudpulse" {
+  provider   = aws.main
+  name       = "${var.main_stack_name}-instance-profile"
+  role       = aws_iam_role.cloudpulse_ec2.name
+  depends_on = [aws_iam_role_policy_attachment.cloudpulse_ec2_ssm_core]
+}
 
- resource "aws_instance" "cloudpulse" {
-   provider                    = aws.main
-   ami                         = data.aws_ami.amazon_linux.id
-   instance_type               = var.instance_type
-   subnet_id                   = aws_subnet.public.id
-   vpc_security_group_ids      = [aws_security_group.cloudpulse_sg.id]
-   iam_instance_profile        = aws_iam_instance_profile.cloudpulse.name
-   associate_public_ip_address = true
-   private_ip                  = "10.0.0.10"
-   user_data_replace_on_change = true
+resource "aws_instance" "cloudpulse" {
+  provider                    = aws.main
+  ami                         = data.aws_ami.amazon_linux.id
+  instance_type               = var.instance_type
+  subnet_id                   = aws_subnet.public.id
+  vpc_security_group_ids      = [aws_security_group.cloudpulse_sg.id]
+  iam_instance_profile        = aws_iam_instance_profile.cloudpulse.name
+  associate_public_ip_address = true
+  private_ip                  = "10.0.0.10"
+  user_data_replace_on_change = true
 
-   depends_on = [aws_iam_role_policy_attachment.cloudpulse_ec2_ssm_core]
+  depends_on = [aws_iam_role_policy_attachment.cloudpulse_ec2_ssm_core]
 
-   user_data = <<-EOF
+  user_data = <<-EOF
      !/bin/bash
      exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
@@ -273,11 +273,11 @@
       2. Inject the Flask app
      cat << 'PY_EOF' > /home/ec2-user/app/app.py
      ${templatefile("${path.module}/app.py.tftpl", {
-   bucket_name = aws_s3_bucket.cloudpulse.bucket,
-   table_name  = var.main_dynamodb_table_name,
-   aws_region  = var.main_aws_region,
-   image_key   = var.background_image_key
- })}
+  bucket_name = aws_s3_bucket.cloudpulse.bucket,
+  table_name  = var.main_dynamodb_table_name,
+  aws_region  = var.main_aws_region,
+  image_key   = var.background_image_key
+})}
      PY_EOF
 
       3. Setup Flask Service (Redirecting logs to a file for Promtail)
@@ -371,35 +371,35 @@
      systemctl start promtail
    EOF
 
- tags = {
-   Name = "${var.main_stack_name}-server"
- }
- }
+tags = {
+  Name = "${var.main_stack_name}-server"
+}
+}
 
-  #============================================================
-  #PHASE 5: Observability (Security Group + Module)
-  #============================================================
+#============================================================
+#PHASE 5: Observability (Security Group + Module)
+#============================================================
 
 
- resource "aws_instance" "observability" {
-   provider               = aws.main
-   ami                    = data.aws_ami.amazon_linux.id
-   instance_type          = "c7i-flex.large"
-   subnet_id              = aws_subnet.public.id
-   vpc_security_group_ids = [aws_security_group.cloudpulse_sg.id]
-   iam_instance_profile   = aws_iam_instance_profile.cloudpulse.name
-   private_ip             = "10.0.0.20"
+resource "aws_instance" "observability" {
+  provider               = aws.main
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = "c7i-flex.large"
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.cloudpulse_sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.cloudpulse.name
+  private_ip             = "10.0.0.20"
 
-   root_block_device {
-     volume_size           = 20
-     volume_type           = "gp3"
-     delete_on_termination = true
-     encrypted             = true
-   }
+  root_block_device {
+    volume_size           = 20
+    volume_type           = "gp3"
+    delete_on_termination = true
+    encrypted             = true
+  }
 
-   user_data_replace_on_change = true
+  user_data_replace_on_change = true
 
-   user_data = <<-EOF
+  user_data = <<-EOF
  !/bin/bash
   Redirect all output to log file
  exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
@@ -434,8 +434,8 @@
 
  cat <<PROM_EOF > /home/ec2-user/monitoring/prometheus/prometheus.yml
  ${templatefile("${path.module}/monitoring/prometheus/prometheus.yml", {
-   app_private_ip = "10.0.0.10"
- })}
+  app_private_ip = "10.0.0.10"
+})}
  PROM_EOF
 
  cat <<'LOKI_EOF' > /home/ec2-user/monitoring/loki/loki-config.yaml
@@ -476,24 +476,24 @@
  echo "--- User Data Script Complete ---"
  EOF
 
- tags = { Name = "${var.main_stack_name}-monitoring" }
- }
+tags = { Name = "${var.main_stack_name}-monitoring" }
+}
 
-  #============================================================
-  #Outputs
-  #============================================================
+#============================================================
+#Outputs
+#============================================================
 
- output "app_url" {
-   description = "Open this in your browser!"
-   value       = "http://${aws_instance.cloudpulse.public_ip}"
- }
+output "app_url" {
+  description = "Open this in your browser!"
+  value       = "http://${aws_instance.cloudpulse.public_ip}"
+}
 
- output "monitoring_url" {
-   description = "Open this in your browser!"
-   value       = "http://${aws_instance.observability.public_ip}:3000"
- }
+output "monitoring_url" {
+  description = "Open this in your browser!"
+  value       = "http://${aws_instance.observability.public_ip}:3000"
+}
 
- output "locust_url" {
-   description = "Open this in your browser!"
-   value       = "http://${aws_instance.observability.public_ip}:8089"
- }
+output "locust_url" {
+  description = "Open this in your browser!"
+  value       = "http://${aws_instance.observability.public_ip}:8089"
+}
