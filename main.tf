@@ -1,5 +1,6 @@
+# ============================================================
 # CloudPulse Infrastructure — Observability
-
+# ============================================================
 
 data "aws_caller_identity" "current" {}
 
@@ -29,9 +30,9 @@ data "aws_ami" "amazon_linux" {
 }
 
 
-
-#PHASE 1: Network — VPC + Subnet + Route table
-#============================================================
+# ============================================================
+# PHASE 1: Network — VPC + Subnet + Route table
+# ============================================================
 
 
 resource "aws_vpc" "cloudpulse" {
@@ -83,7 +84,7 @@ resource "aws_security_group" "cloudpulse_sg" {
   name        = "${var.main_stack_name}-sg"
   description = "Allow SSH, HTTP, and App ports"
   vpc_id      = aws_vpc.cloudpulse.id
-  #Standard SSH & HTTP
+  # Standard SSH & HTTP
   ingress {
     description = "SSH"
     from_port   = 22
@@ -151,9 +152,9 @@ resource "aws_s3_object" "background" {
 
 
 
-#============================================================
+# ============================================================
 # PHASE 3: DynamoDB
-#============================================================
+# ============================================================
 
 
 resource "aws_dynamodb_table" "cloudpulse" {
@@ -176,11 +177,11 @@ resource "aws_dynamodb_table_item" "visits" {
   hash_key   = aws_dynamodb_table.cloudpulse.hash_key
 
   item = <<ITEM
- {
-   "id": {"S": "visits"},
-   "count": {"N": "0"}
- }
- ITEM
+{
+  "id": {"S": "visits"},
+  "count": {"N": "0"}
+}
+ITEM
 
   lifecycle {
     ignore_changes = [item]
@@ -189,9 +190,9 @@ resource "aws_dynamodb_table_item" "visits" {
 
 
 
-#============================================================
-#PHASE 4: IAM + EC2
-#============================================================
+# ============================================================
+# PHASE 4: IAM + EC2
+# ============================================================
 
 
 resource "aws_iam_role" "cloudpulse_ec2" {
@@ -256,129 +257,129 @@ resource "aws_instance" "cloudpulse" {
   depends_on = [aws_iam_role_policy_attachment.cloudpulse_ec2_ssm_core]
 
   user_data = <<-EOF
-     !/bin/bash
-     exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+    #!/bin/bash
+    exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
-      SSM agent (credentials available after IAM profile attach at launch)
-     systemctl enable amazon-ssm-agent
-     systemctl restart amazon-ssm-agent
+    # SSM agent (credentials available after IAM profile attach at launch)
+    systemctl enable amazon-ssm-agent
+    systemctl restart amazon-ssm-agent
 
-      1. Install App dependencies
-     yum update -y
-     yum install -y python3-pip unzip
-     pip3 install flask requests boto3 pytz prometheus-flask-exporter
+    # 1. Install App dependencies
+    yum update -y
+    yum install -y python3-pip unzip
+    pip3 install flask requests boto3 pytz prometheus-flask-exporter
 
     mkdir -p /home/ec2-user/app
 
-      2. Inject the Flask app
-     cat << 'PY_EOF' > /home/ec2-user/app/app.py
-     ${templatefile("${path.module}/app.py.tftpl", {
+    # 2. Inject the Flask app
+    cat << 'PY_EOF' > /home/ec2-user/app/app.py
+    ${templatefile("${path.module}/app.py.tftpl", {
   bucket_name = aws_s3_bucket.cloudpulse.bucket,
   table_name  = var.main_dynamodb_table_name,
   aws_region  = var.main_aws_region,
   image_key   = var.background_image_key
 })}
-     PY_EOF
+    PY_EOF
 
-      3. Setup Flask Service (Redirecting logs to a file for Promtail)
-     cat <<SVC_EOF > /etc/systemd/system/cloudpulse.service
-     [Unit]
-     Description=CloudPulse Flask App
-     After=network.target
+    # 3. Setup Flask Service (Redirecting logs to a file for Promtail)
+    cat <<SVC_EOF > /etc/systemd/system/cloudpulse.service
+    [Unit]
+    Description=CloudPulse Flask App
+    After=network.target
 
-     [Service]
-     User=root
-     WorkingDirectory=/home/ec2-user/app
-      Standard output/error redirected to app.log for Loki
-     ExecStart=/usr/bin/python3 /home/ec2-user/app/app.py
-     StandardOutput=append:/home/ec2-user/app/app.log
-     StandardError=append:/home/ec2-user/app/app.log
-     Restart=always
+    [Service]
+    User=root
+    WorkingDirectory=/home/ec2-user/app
+    # Standard output/error redirected to app.log for Loki
+    ExecStart=/usr/bin/python3 /home/ec2-user/app/app.py
+    StandardOutput=append:/home/ec2-user/app/app.log
+    StandardError=append:/home/ec2-user/app/app.log
+    Restart=always
 
-     [Install]
-     WantedBy=multi-user.target
-     SVC_EOF
+    [Install]
+    WantedBy=multi-user.target
+    SVC_EOF
 
-     systemctl daemon-reload
-     systemctl enable cloudpulse
-     systemctl start cloudpulse
+    systemctl daemon-reload
+    systemctl enable cloudpulse
+    systemctl start cloudpulse
 
-      4. Install Node Exporter (Metrics for Port 9100)
-     wget https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-amd64.tar.gz
-     tar xvfz node_exporter-1.7.0.linux-amd64.tar.gz
-     cp node_exporter-1.7.0.linux-amd64/node_exporter /usr/local/bin/
+    # 4. Install Node Exporter (Metrics for Port 9100)
+    wget https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-amd64.tar.gz
+    tar xvfz node_exporter-1.7.0.linux-amd64.tar.gz
+    cp node_exporter-1.7.0.linux-amd64/node_exporter /usr/local/bin/
 
-     cat <<NODE_EOF > /etc/systemd/system/node_exporter.service
-     [Unit]
-     Description=Node Exporter
-     After=network.target
+    cat <<NODE_EOF > /etc/systemd/system/node_exporter.service
+    [Unit]
+    Description=Node Exporter
+    After=network.target
 
-     [Service]
-     User=ec2-user
-     ExecStart=/usr/local/bin/node_exporter
+    [Service]
+    User=ec2-user
+    ExecStart=/usr/local/bin/node_exporter
 
-     [Install]
-     WantedBy=multi-user.target
-     NODE_EOF
+    [Install]
+    WantedBy=multi-user.target
+    NODE_EOF
 
-     systemctl enable node_exporter
-     systemctl start node_exporter
+    systemctl enable node_exporter
+    systemctl start node_exporter
 
-      5. Install Promtail (Log shipping to Port 3100)
-     curl -L https://github.com/grafana/loki/releases/download/v2.9.1/promtail-linux-amd64.zip -o promtail.zip
-     unzip promtail.zip
-     mv promtail-linux-amd64 /usr/local/bin/promtail
+    # 5. Install Promtail (Log shipping to Port 3100)
+    curl -L https://github.com/grafana/loki/releases/download/v2.9.1/promtail-linux-amd64.zip -o promtail.zip
+    unzip promtail.zip
+    mv promtail-linux-amd64 /usr/local/bin/promtail
 
-     cat <<PROM_EOF > /etc/promtail-config.yml
-     server:
-       http_listen_port: 9080
-       grpc_listen_port: 0
+    cat <<PROM_EOF > /etc/promtail-config.yml
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
 
-     positions:
-       filename: /tmp/positions.yaml
+    positions:
+      filename: /tmp/positions.yaml
 
-     clients:
-       - url: http://10.0.0.20:3100/loki/api/v1/push
+    clients:
+      - url: http://10.0.0.20:3100/loki/api/v1/push
 
-     scrape_configs:
-     - job_name: flask-logs
-       static_configs:
-       - targets:
-           - localhost
-         labels:
-           job: cloudpulse
-           instance: ${var.main_stack_name}-server
-           __path__: /home/ec2-user/app/app.log
-     PROM_EOF
+    scrape_configs:
+    - job_name: flask-logs
+      static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: cloudpulse
+          instance: ${var.main_stack_name}-server
+          __path__: /home/ec2-user/app/app.log
+    PROM_EOF
 
-     docker run -d --restart unless-stopped --name=node-exporter -p 9100:9100 prom/node-exporter
+    docker run -d --restart unless-stopped --name=node-exporter -p 9100:9100 prom/node-exporter
 
-     cat <<P_SVC_EOF > /etc/systemd/system/promtail.service
-     [Unit]
-     Description=Promtail service
-     After=network.target
+    cat <<P_SVC_EOF > /etc/systemd/system/promtail.service
+    [Unit]
+    Description=Promtail service
+    After=network.target
 
-     [Service]
-     Type=simple
-     User=root
-     ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail-config.yml
+    [Service]
+    Type=simple
+    User=root
+    ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail-config.yml
 
-     [Install]
-     WantedBy=multi-user.target
-     P_SVC_EOF
+    [Install]
+    WantedBy=multi-user.target
+    P_SVC_EOF
 
-     systemctl enable promtail
-     systemctl start promtail
-   EOF
+    systemctl enable promtail
+    systemctl start promtail
+  EOF
 
 tags = {
   Name = "${var.main_stack_name}-server"
 }
 }
 
-#============================================================
-#PHASE 5: Observability (Security Group + Module)
-#============================================================
+# ============================================================
+# PHASE 5: Observability (Security Group + Module)
+# ============================================================
 
 
 resource "aws_instance" "observability" {
@@ -400,88 +401,88 @@ resource "aws_instance" "observability" {
   user_data_replace_on_change = true
 
   user_data = <<-EOF
- !/bin/bash
-  Redirect all output to log file
- exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+#!/bin/bash
+# Redirect all output to log file
+exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
- echo "--- Starting User Data Installation ---"
+echo "--- Starting User Data Installation ---"
 
- systemctl enable amazon-ssm-agent
- systemctl restart amazon-ssm-agent
+systemctl enable amazon-ssm-agent
+systemctl restart amazon-ssm-agent
 
-  1. Install Docker & Compose Plugin
- yum update -y
- yum install -y docker
- systemctl enable --now docker
+# 1. Install Docker & Compose Plugin
+yum update -y
+yum install -y docker
+systemctl enable --now docker
 
-  Install Docker Compose V2 Plugin manually
- mkdir -p /usr/local/lib/docker/cli-plugins/
- curl -SL https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
- chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+# Install Docker Compose V2 Plugin manually
+mkdir -p /usr/local/lib/docker/cli-plugins/
+curl -SL https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
-  2. Create Directory Structure
- mkdir -p /home/ec2-user/monitoring/prometheus
- mkdir -p /home/ec2-user/monitoring/loki
- mkdir -p /home/ec2-user/monitoring/grafana/provisioning/datasources
- mkdir -p /home/ec2-user/monitoring/grafana/provisioning/dashboards
- mkdir -p /home/ec2-user/monitoring/locust
+# 2. Create Directory Structure
+mkdir -p /home/ec2-user/monitoring/prometheus
+mkdir -p /home/ec2-user/monitoring/loki
+mkdir -p /home/ec2-user/monitoring/grafana/provisioning/datasources
+mkdir -p /home/ec2-user/monitoring/grafana/provisioning/dashboards
+mkdir -p /home/ec2-user/monitoring/locust
 
-  3. Write Config Files (Ensuring NO indentation for the markers)
+# 3. Write Config Files (Ensuring NO indentation for the markers)
 
- cat <<'COMPOSE_EOF' > /home/ec2-user/monitoring/docker-compose.yml
- ${file("${path.module}/monitoring/docker-compose.yml")}
- COMPOSE_EOF
+cat <<'COMPOSE_EOF' > /home/ec2-user/monitoring/docker-compose.yml
+${file("${path.module}/monitoring/docker-compose.yml")}
+COMPOSE_EOF
 
- cat <<PROM_EOF > /home/ec2-user/monitoring/prometheus/prometheus.yml
- ${templatefile("${path.module}/monitoring/prometheus/prometheus.yml", {
+cat <<PROM_EOF > /home/ec2-user/monitoring/prometheus/prometheus.yml
+${templatefile("${path.module}/monitoring/prometheus/prometheus.yml", {
   app_private_ip = "10.0.0.10"
 })}
- PROM_EOF
+PROM_EOF
 
- cat <<'LOKI_EOF' > /home/ec2-user/monitoring/loki/loki-config.yaml
- ${file("${path.module}/monitoring/loki/loki-config.yaml")}
- LOKI_EOF
+cat <<'LOKI_EOF' > /home/ec2-user/monitoring/loki/loki-config.yaml
+${file("${path.module}/monitoring/loki/loki-config.yaml")}
+LOKI_EOF
 
- cat <<'DS_EOF' > /home/ec2-user/monitoring/grafana/provisioning/datasources/ds.yml
- ${file("${path.module}/monitoring/grafana/provisioning/datasources/ds.yml")}
- DS_EOF
+cat <<'DS_EOF' > /home/ec2-user/monitoring/grafana/provisioning/datasources/ds.yml
+${file("${path.module}/monitoring/grafana/provisioning/datasources/ds.yml")}
+DS_EOF
 
- cat <<'LOCUST_EOF' > /home/ec2-user/monitoring/locust/locustfile.py
- ${file("${path.module}/monitoring/locust/locustfile.py")}
- LOCUST_EOF
+cat <<'LOCUST_EOF' > /home/ec2-user/monitoring/locust/locustfile.py
+${file("${path.module}/monitoring/locust/locustfile.py")}
+LOCUST_EOF
 
- cat <<'DASH_PROV_EOF' > /home/ec2-user/monitoring/grafana/provisioning/dashboards/provider.yml
- apiVersion: 1
- providers:
-   - name: 'Standard Dashboards'
-     orgId: 1
-     folder: ''
-     type: file
-     disableDeletion: false
-     editable: true
-     options:
-       path: /etc/grafana/provisioning/dashboards
- DASH_PROV_EOF
+cat <<'DASH_PROV_EOF' > /home/ec2-user/monitoring/grafana/provisioning/dashboards/provider.yml
+apiVersion: 1
+providers:
+  - name: 'Standard Dashboards'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+DASH_PROV_EOF
 
- cat <<'APP_EOF' > /home/ec2-user/monitoring/grafana/provisioning/dashboards/app.json
- ${file("${path.module}/monitoring/grafana/provisioning/dashboards/app.json")}
- APP_EOF
+cat <<'APP_EOF' > /home/ec2-user/monitoring/grafana/provisioning/dashboards/app.json
+${file("${path.module}/monitoring/grafana/provisioning/dashboards/app.json")}
+APP_EOF
 
-  4. Fix permissions and Start
- echo "--- Fixing permissions and starting Docker Compose ---"
- chown -R ec2-user:ec2-user /home/ec2-user/monitoring
- cd /home/ec2-user/monitoring
- docker compose up -d
+# 4. Fix permissions and Start
+echo "--- Fixing permissions and starting Docker Compose ---"
+chown -R ec2-user:ec2-user /home/ec2-user/monitoring
+cd /home/ec2-user/monitoring
+docker compose up -d
 
- echo "--- User Data Script Complete ---"
- EOF
+echo "--- User Data Script Complete ---"
+EOF
 
 tags = { Name = "${var.main_stack_name}-monitoring" }
 }
 
-#============================================================
-#Outputs
-#============================================================
+# ============================================================
+# Outputs
+# ============================================================
 
 output "app_url" {
   description = "Open this in your browser!"
