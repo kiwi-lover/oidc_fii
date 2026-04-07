@@ -2,6 +2,7 @@
 # CloudPulse — DR without custom ACM.
 # ============================================================
 
+
 data "aws_region" "nc_dr_primary" {}
 
 data "aws_region" "nc_dr_secondary_region" {
@@ -516,6 +517,9 @@ resource "aws_iam_role" "nc_s3_replication" {
       Effect    = "Allow"
     }]
   })
+}
+resource "aws_iam_service_linked_role" "autoscaling" {
+  aws_service_name = "autoscaling.amazonaws.com"
 }
 
 resource "aws_iam_role_policy" "nc_s3_replication" {
